@@ -18,6 +18,7 @@ export class SceneManager {
         
         this.initThree();
         this.initCannon();
+        this.buildRoom();
         this.buildTable();
         this.buildBoard();
         this.buildPieces();
@@ -78,8 +79,9 @@ export class SceneManager {
         this.scene.add(hemiLight);
 
         const dirLight = new THREE.DirectionalLight(0xfff0dd, 1.8);
-        dirLight.position.set(15, 30, 15);
+        dirLight.position.set(20, 60, 20);
         dirLight.castShadow = true;
+        dirLight.shadow.bias = -0.0005;
         dirLight.shadow.mapSize.width = 2048;
         dirLight.shadow.mapSize.height = 2048;
         dirLight.shadow.camera.top = 25;
@@ -104,6 +106,39 @@ export class SceneManager {
         this.world.addContactMaterial(contactMat);
     }
 
+    buildRoom() {
+        // Room bounds: 240 x 140 x 240
+        const roomGeo = new THREE.BoxGeometry(240, 140, 240);
+        
+        const wallMat = new THREE.MeshStandardMaterial({
+            color: 0x5c4d3c, // Warm dark brown/grey plaster
+            roughness: 1.0,
+            side: THREE.BackSide
+        });
+        const floorMat = new THREE.MeshStandardMaterial({
+            color: 0x2e241c, // Darker earthen floor
+            roughness: 1.0,
+            side: THREE.BackSide
+        });
+        const invisibleMat = new THREE.MeshBasicMaterial({ visible: false, side: THREE.BackSide });
+
+        // Materials: Right, Left, Top, Bottom, Front, Back
+        const materials = [
+            wallMat,       
+            wallMat,       
+            invisibleMat,  
+            floorMat,      
+            wallMat,       
+            wallMat        
+        ];
+
+        const room = new THREE.Mesh(roomGeo, materials);
+        // Positioned so the interior floor sits at Y = -20
+        room.position.set(0, 50, 0); 
+        room.receiveShadow = true;
+        this.scene.add(room);
+    }
+
     buildTable() {
         // Large table
         const tableGeo = new THREE.BoxGeometry(60, 2, 40);
@@ -123,6 +158,23 @@ export class SceneManager {
         table.position.set(2, -1.5, 0); 
         table.receiveShadow = true;
         this.scene.add(table);
+
+        // Table legs
+        const legGeo = new THREE.CylinderGeometry(1.5, 1.0, 17.5);
+        const legMat = new THREE.MeshStandardMaterial({ color: 0x2e1b15, roughness: 0.9 });
+        const legPositions = [
+            [-24, -11.25, -16],
+            [28, -11.25, -16],
+            [-24, -11.25, 16],
+            [28, -11.25, 16]
+        ];
+        legPositions.forEach(pos => {
+            const leg = new THREE.Mesh(legGeo, legMat);
+            leg.position.set(...pos);
+            leg.castShadow = true;
+            leg.receiveShadow = true;
+            this.scene.add(leg);
+        });
 
         // Physics for table
         const tableShape = new CANNON.Box(new CANNON.Vec3(30, 1, 20));
@@ -366,25 +418,27 @@ export class SceneManager {
     }
 
     applyThrowImpulses(impulses) {
-        this.isShaking = true;
-        this.shakeTime = 0;
+        this.isThrowing = true;
+        this.throwTime = 0;
         this.pendingImpulses = impulses;
+        this.stickStartStates = [];
 
-        // Random direction for the hand to tilt when tossing
-        this.handTiltX = (Math.random() - 0.5) * Math.PI;
-        this.handTiltZ = (Math.random() - 0.5) * Math.PI;
-
-        // Make sticks kinematic for the shake animation
+        // Make sticks kinematic for the lift animation
         for (let i = 0; i < 4; i++) {
             const body = this.stickBodies[i];
             body.type = CANNON.Body.KINEMATIC;
             body.velocity.set(0, 0, 0);
             body.angularVelocity.set(0, 0, 0);
+            
+            this.stickStartStates.push({
+                pos: body.position.clone(),
+                quat: body.quaternion.clone()
+            });
         }
     }
 
     checkSticksSettled() {
-        if (this.isShaking) return false;
+        if (this.isThrowing) return false;
         let settled = true;
         for (const body of this.stickBodies) {
             if (body.velocity.lengthSquared() > 0.05 || body.angularVelocity.lengthSquared() > 0.05) {
@@ -428,51 +482,48 @@ export class SceneManager {
         // Step Physics
         this.world.step(1 / 60);
 
-        if (this.isShaking) {
-            this.shakeTime += 1 / 60;
-            const liftProgress = Math.min(this.shakeTime / 0.2, 1.0);
-            const dropProgress = Math.max(0, (this.shakeTime - 0.4) / 0.2);
+        if (this.isThrowing) {
+            this.throwTime += 1 / 60;
+            const duration = 0.8; // 0.8 seconds to scoop and lift
+            const t = Math.min(this.throwTime / duration, 1.0);
+            
+            // Easing functions
+            const easeOut = 1 - Math.pow(1 - t, 3);
+            const easeIn = t * t * t;
             
             for (let i = 0; i < 4; i++) {
                 const body = this.stickBodies[i];
+                const start = this.stickStartStates[i];
                 
-                // Cupped hand targets (tighter spacing, lower height)
-                const targetX = 14.5 + (i % 2) * 0.8 - 0.4;
-                const targetY = 1.8;
-                const targetZ = (i < 2 ? -0.4 : 0.4);
+                // Scoop motion: pull sticks together, lift high
+                const centerX = 14.5 + 0.9; // Approximate center of the sticks setup
+                const centerZ = 0;
                 
-                const shakeIntensity = liftProgress * (1 - dropProgress) * 0.3;
-                const shakeX = (Math.random() - 0.5) * shakeIntensity;
-                const shakeY = (Math.random() - 0.5) * shakeIntensity;
-                const shakeZ = (Math.random() - 0.5) * shakeIntensity;
+                // Clump together as they are picked up
+                const clumpX = start.pos.x + (centerX - start.pos.x) * (easeOut * 0.7);
+                const clumpZ = start.pos.z + (centerZ - start.pos.z) * (easeOut * 0.7);
                 
-                // Tilt offset to simulate pouring out of the hand
-                const pourOffsetX = Math.sin(this.handTiltZ) * dropProgress * 1.5;
-                const pourOffsetZ = -Math.sin(this.handTiltX) * dropProgress * 1.5;
-                const pourOffsetY = -dropProgress * 0.5;
-
-                const targetPos = new CANNON.Vec3(
-                    targetX + shakeX + pourOffsetX, 
-                    targetY + shakeY + pourOffsetY, 
-                    targetZ + shakeZ + pourOffsetZ
+                // Swoop up and slightly back
+                const swoopX = Math.sin(t * Math.PI) * -2.0; 
+                const swoopY = easeOut * 12; // Lift much higher (12 units)
+                
+                body.position.set(
+                    clumpX + swoopX,
+                    start.pos.y + swoopY,
+                    clumpZ
                 );
-                body.position.lerp(targetPos, 0.4, body.position);
                 
-                // Rotation: base jitter + tilt drop
-                const baseJitterX = (Math.random() - 0.5) * shakeIntensity * 2;
-                const baseJitterY = (Math.random() - 0.5) * shakeIntensity * 2;
-                const baseJitterZ = (Math.random() - 0.5) * shakeIntensity * 2;
-
-                const currentTiltX = baseJitterX + (this.handTiltX * dropProgress);
-                const currentTiltZ = baseJitterZ + (this.handTiltZ * dropProgress);
-
-                const targetQuat = new CANNON.Quaternion();
-                targetQuat.setFromEuler(currentTiltX, baseJitterY, currentTiltZ);
-                body.quaternion.slerp(targetQuat, 0.4, body.quaternion);
+                // Gentle tilt to cradle, then pitch forward to toss
+                const cradlingTilt = Math.sin(t * Math.PI) * (Math.PI / 8); 
+                const tossTilt = easeIn * (Math.PI / 3); 
+                
+                const qTilt = new CANNON.Quaternion();
+                qTilt.setFromEuler(tossTilt, 0, cradlingTilt);
+                start.quat.mult(qTilt, body.quaternion);
             }
             
-            if (this.shakeTime > 0.6) {
-                this.isShaking = false;
+            if (this.throwTime > duration) {
+                this.isThrowing = false;
                 for (let i = 0; i < 4; i++) {
                     const body = this.stickBodies[i];
                     body.type = CANNON.Body.DYNAMIC;
@@ -497,6 +548,11 @@ export class SceneManager {
             if (this.controls.target.distanceTo(this.targetLerpPos) < 0.01) {
                 this.isLerpingTarget = false;
             }
+        } else {
+            // Keep panning target restrained strictly within the room
+            this.controls.target.x = THREE.MathUtils.clamp(this.controls.target.x, -40, 40);
+            this.controls.target.y = THREE.MathUtils.clamp(this.controls.target.y, -10, 10);
+            this.controls.target.z = THREE.MathUtils.clamp(this.controls.target.z, -40, 40);
         }
 
         this.controls.update();
