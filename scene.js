@@ -12,6 +12,9 @@ export class SceneManager {
         this.sticks = [];
         this.stickBodies = [];
         this.highlightBoxes = [];
+        this.boardMeshes = [];
+        this.targetLerpPos = new THREE.Vector3(-3, 0, 0);
+        this.isLerpingTarget = false;
         
         this.initThree();
         this.initCannon();
@@ -23,7 +26,22 @@ export class SceneManager {
         // Interaction
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
-        window.addEventListener('pointerdown', this.onPointerDown.bind(this));
+        this.isDragging = false;
+        this.downPos = null;
+
+        window.addEventListener('pointerdown', (e) => {
+            this.isDragging = false;
+            this.downPos = { x: e.clientX, y: e.clientY };
+        });
+        
+        window.addEventListener('pointermove', (e) => {
+            if (this.downPos) {
+                const dist = Math.abs(e.clientX - this.downPos.x) + Math.abs(e.clientY - this.downPos.y);
+                if (dist > 10) this.isDragging = true;
+            }
+        });
+
+        window.addEventListener('pointerup', this.onPointerUp.bind(this));
         window.addEventListener('resize', this.onWindowResize.bind(this));
 
         this.animate = this.animate.bind(this);
@@ -34,8 +52,8 @@ export class SceneManager {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x1a1a1a);
 
-        this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-        this.camera.position.set(5, 22, 22);
+        this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 150);
+        this.camera.position.set(0, 35, 45);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -44,10 +62,14 @@ export class SceneManager {
 
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
-        this.controls.target.set(5, 0, 0);
+        this.controls.target.set(-3, 0, 0);
         this.controls.maxPolarAngle = Math.PI / 2.2; // Don't go below board
         this.controls.minDistance = 10;
-        this.controls.maxDistance = 30;
+        this.controls.maxDistance = 80;
+        this.controls.enablePan = true;
+        this.controls.addEventListener('start', () => {
+            this.isLerpingTarget = false;
+        });
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         this.scene.add(ambientLight);
@@ -132,7 +154,9 @@ export class SceneManager {
         const base = new THREE.Mesh(baseGeo, baseMat);
         base.position.set(-3, -0.25, 0); // Center of the left-shifted board
         base.receiveShadow = true;
+        base.userData = { isBoard: true };
         this.scene.add(base);
+        this.boardMeshes.push(base);
 
         // Tiles
         const tileGeo = new THREE.BoxGeometry(1.9, 0.1, 1.9);
@@ -149,7 +173,9 @@ export class SceneManager {
             const pos = getBoardCoordinates(i);
             tile.position.set(pos.x, 0.05, pos.z);
             tile.receiveShadow = true;
+            tile.userData = { isBoard: true };
             this.scene.add(tile);
+            this.boardMeshes.push(tile);
         }
     }
 
@@ -257,13 +283,16 @@ export class SceneManager {
         });
     }
 
-    onPointerDown(event) {
+    onPointerUp(event) {
+        this.downPos = null;
+        if (this.isDragging) return;
+
         this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
         this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
         this.raycaster.setFromCamera(this.mouse, this.camera);
         
-        const interactables = [...Object.values(this.piecesMeshes), ...this.highlightBoxes];
+        const interactables = [...Object.values(this.piecesMeshes), ...this.highlightBoxes, ...this.boardMeshes];
         const intersects = this.raycaster.intersectObjects(interactables);
         
         if (intersects.length > 0) {
@@ -271,11 +300,20 @@ export class SceneManager {
             if (object.userData.isMove) {
                 this.onInteract('move', object.userData.move);
             } else if (object.userData.id) {
+                this.focusCameraOn(object.position);
                 this.onInteract('piece', object.userData.id);
+            } else if (object.userData.isBoard) {
+                this.focusCameraOn(new THREE.Vector3(-3, 0, 0));
+                this.onInteract('none', null);
             }
         } else {
             this.onInteract('none', null);
         }
+    }
+
+    focusCameraOn(position) {
+        this.targetLerpPos.copy(position);
+        this.isLerpingTarget = true;
     }
 
     applyThrowImpulses(impulses) {
@@ -351,6 +389,13 @@ export class SceneManager {
         for (let i = 0; i < 4; i++) {
             this.sticks[i].position.copy(this.stickBodies[i].position);
             this.sticks[i].quaternion.copy(this.stickBodies[i].quaternion);
+        }
+
+        if (this.isLerpingTarget) {
+            this.controls.target.lerp(this.targetLerpPos, 0.1);
+            if (this.controls.target.distanceTo(this.targetLerpPos) < 0.01) {
+                this.isLerpingTarget = false;
+            }
         }
 
         this.controls.update();
