@@ -71,14 +71,18 @@ class GameManager {
         if (isMyTurn) {
             if (this.gameState.roll === null) {
                 actionHint.innerText = "Tap the sticks to roll!";
-                if (!this.pannedForRoll && this.scene) {
-                    this.scene.focusOnSticks();
-                    this.pannedForRoll = true;
+                if (this.scene) {
+                    this.scene.showRollIndicator(true);
+                    if (!this.pannedForRoll) {
+                        this.scene.focusOnSticks();
+                        this.pannedForRoll = true;
+                    }
                 }
                 rollResult.classList.add('hidden');
                 this.scene.clearHighlights();
                 this.selectedPiece = null;
             } else {
+                if (this.scene) this.scene.showRollIndicator(false);
                 this.pannedForRoll = false;
                 rollResult.classList.remove('hidden');
                 document.getElementById('roll-number').innerText = this.gameState.roll;
@@ -103,6 +107,7 @@ class GameManager {
             }
         } else {
             this.pannedForRoll = false;
+            if (this.scene) this.scene.showRollIndicator(false);
             actionHint.innerText = "Waiting for opponent...";
             if (this.gameState.roll !== null) {
                 rollResult.classList.remove('hidden');

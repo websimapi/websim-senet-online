@@ -23,6 +23,7 @@ export class SceneManager {
         this.buildBoard();
         this.buildPieces();
         this.buildSticks();
+        this.buildRollIndicator();
 
         // Interaction
         this.raycaster = new THREE.Raycaster();
@@ -305,6 +306,53 @@ export class SceneManager {
         }
     }
 
+    buildRollIndicator() {
+        this.rollIndicator = new THREE.Group();
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        const gradient = ctx.createLinearGradient(0, 0, 256, 256);
+        gradient.addColorStop(0, 'rgba(255, 100, 100, 0.5)');
+        gradient.addColorStop(1, 'rgba(255, 100, 100, 0.0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(128, 128, 128, 0, Math.PI * 2);
+        ctx.fill();
+
+        const tex = new THREE.CanvasTexture(canvas);
+        const innerMat = new THREE.MeshBasicMaterial({ 
+            map: tex, 
+            transparent: true,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        const innerGeo = new THREE.PlaneGeometry(7, 7);
+        this.rollIndicatorInner = new THREE.Mesh(innerGeo, innerMat);
+        this.rollIndicatorInner.rotation.x = -Math.PI / 2;
+        this.rollIndicatorInner.userData = { isStickRegion: true };
+        this.rollIndicator.add(this.rollIndicatorInner);
+
+        const outlineGeo = new THREE.RingGeometry(3.4, 3.6, 64);
+        const outlineMat = new THREE.MeshBasicMaterial({
+            color: 0xff6666,
+            transparent: true,
+            opacity: 0.8,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        this.rollIndicatorOutline = new THREE.Mesh(outlineGeo, outlineMat);
+        this.rollIndicatorOutline.rotation.x = -Math.PI / 2;
+        this.rollIndicator.add(this.rollIndicatorOutline);
+
+        this.rollIndicator.position.set(14.5, -0.48, 0); 
+        this.rollIndicator.visible = false;
+        
+        this.scene.add(this.rollIndicator);
+        this.rollIndicatorTime = 0;
+    }
+
     updatePiecesPositions(statePieces) {
         for (const [id, posIndex] of Object.entries(statePieces)) {
             const mesh = this.piecesMeshes[id];
@@ -377,6 +425,12 @@ export class SceneManager {
         });
     }
 
+    showRollIndicator(show) {
+        if (this.rollIndicator) {
+            this.rollIndicator.visible = show;
+        }
+    }
+
     onPointerUp(event) {
         this.downPos = null;
         if (this.isDragging) return;
@@ -387,13 +441,14 @@ export class SceneManager {
         this.raycaster.setFromCamera(this.mouse, this.camera);
         
         const interactables = [...Object.values(this.piecesMeshes), ...this.highlightBoxes, ...this.boardMeshes, ...this.sticks];
+        if (this.rollIndicatorInner) interactables.push(this.rollIndicatorInner);
         const intersects = this.raycaster.intersectObjects(interactables);
         
         if (intersects.length > 0) {
             const object = intersects[0].object;
             if (object.userData.isMove) {
                 this.onInteract('move', object.userData.move);
-            } else if (object.userData.isStick) {
+            } else if (object.userData.isStick || object.userData.isStickRegion) {
                 this.focusOnSticks();
                 this.onInteract('sticks', null);
             } else if (object.userData.id) {
@@ -545,6 +600,13 @@ export class SceneManager {
         for (let i = 0; i < 4; i++) {
             this.sticks[i].position.copy(this.stickBodies[i].position);
             this.sticks[i].quaternion.copy(this.stickBodies[i].quaternion);
+        }
+
+        if (this.rollIndicator && this.rollIndicator.visible) {
+            this.rollIndicatorTime += 0.05;
+            const scale = 1.0 + Math.sin(this.rollIndicatorTime) * 0.05;
+            this.rollIndicator.scale.set(scale, scale, scale);
+            this.rollIndicatorOutline.material.opacity = 0.4 + Math.sin(this.rollIndicatorTime * 2) * 0.4;
         }
 
         if (this.isLerpingTarget) {
