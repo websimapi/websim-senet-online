@@ -94,14 +94,8 @@ class GameManager {
                 } else {
                     if (!this.selectedPiece) {
                         actionHint.innerText = "Tap one of your pieces to select it.";
-                        this.scene.clearHighlights();
-                        // Highlight all movable pieces subtly
                         const movablePieceIds = [...new Set(this.gameState.validMoves.map(m => m.pieceId))];
-                        movablePieceIds.forEach(id => {
-                            if (this.scene.piecesMeshes[id]) {
-                                this.scene.piecesMeshes[id].material.emissive.setHex(0x222222);
-                            }
-                        });
+                        this.scene.showMovablePieces(movablePieceIds, this.gameState.pieces);
                     } else {
                         actionHint.innerText = "Tap a highlighted destination to move.";
                     }

@@ -71,16 +71,21 @@ export class SceneManager {
             this.isLerpingTarget = false;
         });
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
         this.scene.add(ambientLight);
 
-        const dirLight = new THREE.DirectionalLight(0xfff0dd, 1.5);
-        dirLight.position.set(10, 20, 10);
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+        this.scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfff0dd, 1.8);
+        dirLight.position.set(15, 30, 15);
         dirLight.castShadow = true;
-        dirLight.shadow.camera.top = 15;
-        dirLight.shadow.camera.bottom = -15;
-        dirLight.shadow.camera.left = -15;
-        dirLight.shadow.camera.right = 15;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.top = 25;
+        dirLight.shadow.camera.bottom = -25;
+        dirLight.shadow.camera.left = -25;
+        dirLight.shadow.camera.right = 25;
         this.scene.add(dirLight);
     }
 
@@ -101,15 +106,26 @@ export class SceneManager {
 
     buildTable() {
         // Large table
-        const tableGeo = new THREE.BoxGeometry(40, 2, 20);
-        const tableMat = new THREE.MeshStandardMaterial({ color: 0x2a1610, roughness: 0.9 });
+        const tableGeo = new THREE.BoxGeometry(60, 2, 40);
+        
+        const textureLoader = new THREE.TextureLoader();
+        const woodTexture = textureLoader.load('wood_texture.png');
+        woodTexture.wrapS = THREE.RepeatWrapping;
+        woodTexture.wrapT = THREE.RepeatWrapping;
+        woodTexture.repeat.set(4, 4);
+
+        const tableMat = new THREE.MeshStandardMaterial({ 
+            color: 0xdeb887, // Lighter brown
+            map: woodTexture,
+            roughness: 0.8 
+        });
         const table = new THREE.Mesh(tableGeo, tableMat);
         table.position.set(2, -1.5, 0); 
         table.receiveShadow = true;
         this.scene.add(table);
 
         // Physics for table
-        const tableShape = new CANNON.Box(new CANNON.Vec3(20, 1, 10));
+        const tableShape = new CANNON.Box(new CANNON.Vec3(30, 1, 20));
         const tableBody = new CANNON.Body({ mass: 0, material: this.boardMat });
         tableBody.addShape(tableShape);
         tableBody.position.set(2, -1.5, 0);
@@ -248,6 +264,29 @@ export class SceneManager {
                 mesh.position.set(targetPos.x, targetPos.y, targetPos.z);
             }
         }
+    }
+
+    showMovablePieces(pieceIds, statePieces) {
+        this.clearHighlights();
+
+        const geo = new THREE.BoxGeometry(2.0, 0.05, 2.0);
+        const mat = new THREE.MeshBasicMaterial({ color: 0x00aaff, transparent: true, opacity: 0.5 });
+
+        pieceIds.forEach(id => {
+            const posIndex = statePieces[id];
+            if (posIndex === -1) return;
+            const pos = getBoardCoordinates(posIndex);
+            if (pos) {
+                const box = new THREE.Mesh(geo, mat);
+                box.position.set(pos.x, 0.08, pos.z);
+                box.userData = { id: id };
+                this.scene.add(box);
+                this.highlightBoxes.push(box);
+            }
+            if (this.piecesMeshes[id]) {
+                this.piecesMeshes[id].material.emissive.setHex(0x333300);
+            }
+        });
     }
 
     showValidMoves(moves, selectedPieceId) {
