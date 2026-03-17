@@ -366,21 +366,27 @@ export class SceneManager {
     }
 
     applyThrowImpulses(impulses) {
-        this.isShaking = true;
-        this.shakeTime = 0;
+        this.isThrowing = true;
+        this.throwTime = 0;
         this.pendingImpulses = impulses;
+        this.stickStartStates = [];
 
-        // Make sticks kinematic for the shake animation
+        // Make sticks kinematic for the lift animation
         for (let i = 0; i < 4; i++) {
             const body = this.stickBodies[i];
             body.type = CANNON.Body.KINEMATIC;
             body.velocity.set(0, 0, 0);
             body.angularVelocity.set(0, 0, 0);
+            
+            this.stickStartStates.push({
+                pos: body.position.clone(),
+                quat: body.quaternion.clone()
+            });
         }
     }
 
     checkSticksSettled() {
-        if (this.isShaking) return false;
+        if (this.isThrowing) return false;
         let settled = true;
         for (const body of this.stickBodies) {
             if (body.velocity.lengthSquared() > 0.05 || body.angularVelocity.lengthSquared() > 0.05) {
@@ -424,34 +430,48 @@ export class SceneManager {
         // Step Physics
         this.world.step(1 / 60);
 
-        if (this.isShaking) {
-            this.shakeTime += 1 / 60;
-            const liftProgress = Math.min(this.shakeTime / 0.2, 1.0);
+        if (this.isThrowing) {
+            this.throwTime += 1 / 60;
+            const duration = 0.8; // 0.8 seconds to scoop and lift
+            const t = Math.min(this.throwTime / duration, 1.0);
+            
+            // Easing functions
+            const easeOut = 1 - Math.pow(1 - t, 3);
+            const easeIn = t * t * t;
             
             for (let i = 0; i < 4; i++) {
                 const body = this.stickBodies[i];
+                const start = this.stickStartStates[i];
                 
-                // Hand picked up targets
-                const targetX = 14.5 + (i % 2) * 1.5 - 0.75;
-                const targetY = 3.5;
-                const targetZ = (i < 2 ? -1.5 : 1.5);
+                // Scoop motion: pull sticks together, lift high
+                const centerX = 14.5 + 0.9; // Approximate center of the sticks setup
+                const centerZ = 0;
                 
-                const shakeIntensity = liftProgress * 0.8;
-                const shakeX = (Math.random() - 0.5) * shakeIntensity;
-                const shakeY = (Math.random() - 0.5) * shakeIntensity;
-                const shakeZ = (Math.random() - 0.5) * shakeIntensity;
+                // Clump together as they are picked up
+                const clumpX = start.pos.x + (centerX - start.pos.x) * (easeOut * 0.7);
+                const clumpZ = start.pos.z + (centerZ - start.pos.z) * (easeOut * 0.7);
                 
-                body.position.lerp(new CANNON.Vec3(targetX + shakeX, targetY + shakeY, targetZ + shakeZ), 0.3, body.position);
+                // Swoop up and slightly back
+                const swoopX = Math.sin(t * Math.PI) * -2.0; 
+                const swoopY = easeOut * 12; // Lift much higher (12 units)
                 
-                body.quaternion.setFromEuler(
-                    Math.random() * Math.PI * shakeIntensity,
-                    Math.random() * Math.PI * shakeIntensity,
-                    Math.random() * Math.PI * shakeIntensity
+                body.position.set(
+                    clumpX + swoopX,
+                    start.pos.y + swoopY,
+                    clumpZ
                 );
+                
+                // Gentle tilt to cradle, then pitch forward to toss
+                const cradlingTilt = Math.sin(t * Math.PI) * (Math.PI / 8); 
+                const tossTilt = easeIn * (Math.PI / 3); 
+                
+                const qTilt = new CANNON.Quaternion();
+                qTilt.setFromEuler(tossTilt, 0, cradlingTilt);
+                start.quat.mult(qTilt, body.quaternion);
             }
             
-            if (this.shakeTime > 0.6) {
-                this.isShaking = false;
+            if (this.throwTime > duration) {
+                this.isThrowing = false;
                 for (let i = 0; i < 4; i++) {
                     const body = this.stickBodies[i];
                     body.type = CANNON.Body.DYNAMIC;
