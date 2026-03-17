@@ -12,8 +12,8 @@ class GameManager {
         this.mode = null; // 'online' or 'ai'
         this.localPlayerRole = null; // 'p1' or 'p2'
         this.gameState = {
-            status: 'lobby', // lobby, playing, gameover
-            players: { p1: null, p2: null }, // clientIds or 'AI'
+            status: 'lobby', 
+            players: { p1: null, p2: null }, 
             turn: 'p1',
             roll: null,
             pieces: { ...INITIAL_PIECES },
@@ -21,6 +21,7 @@ class GameManager {
         };
         
         this.throwing = false;
+        this.selectedPiece = null;
 
         this.initUI();
     }
@@ -57,12 +58,10 @@ class GameManager {
         const actionHint = document.getElementById('action-hint');
         const rollResult = document.getElementById('roll-result');
 
-        // Update Turn Indicator
         turnDisplay.innerText = this.gameState.turn === 'p1' ? "P1 Turn" : "P2 Turn";
         turnDisplay.style.color = this.gameState.turn === 'p1' ? "#000" : "#fff";
         turnDisplay.style.textShadow = this.gameState.turn === 'p1' ? "1px 1px 2px #fff" : "1px 1px 2px #000";
 
-        // Update Names
         document.getElementById('p1-info').innerText = `P1 (Black) ${this.localPlayerRole==='p1'?'(You)':''}`;
         document.getElementById('p2-info').innerText = `P2 (White) ${this.localPlayerRole==='p2'?'(You)':(this.mode==='ai'?'(CPU)':'')}`;
 
@@ -78,6 +77,7 @@ class GameManager {
                 actionHint.innerText = "Roll the sticks!";
                 rollResult.classList.add('hidden');
                 this.scene.clearHighlights();
+                this.selectedPiece = null;
             } else {
                 rollBtn.disabled = true;
                 rollResult.classList.remove('hidden');
@@ -85,11 +85,26 @@ class GameManager {
                 
                 if (this.gameState.validMoves.length === 0) {
                     actionHint.innerText = "No valid moves. Turn passes.";
-                    // Auto pass turn after delay
-                    setTimeout(() => this.passTurn(), 2000);
+                    this.scene.clearHighlights();
+                    setTimeout(() => {
+                        if(this.gameState.validMoves.length === 0 && this.gameState.roll !== null && this.gameState.turn === this.localPlayerRole) {
+                            this.passTurn();
+                        }
+                    }, 2000);
                 } else {
-                    actionHint.innerText = "Select a highlighted piece to move.";
-                    this.scene.showValidMoves(this.gameState.validMoves);
+                    if (!this.selectedPiece) {
+                        actionHint.innerText = "Tap one of your pieces to select it.";
+                        this.scene.clearHighlights();
+                        // Highlight all movable pieces subtly
+                        const movablePieceIds = [...new Set(this.gameState.validMoves.map(m => m.pieceId))];
+                        movablePieceIds.forEach(id => {
+                            if (this.scene.piecesMeshes[id]) {
+                                this.scene.piecesMeshes[id].material.emissive.setHex(0x222222);
+                            }
+                        });
+                    } else {
+                        actionHint.innerText = "Tap a highlighted destination to move.";
+                    }
                 }
             }
         } else {
@@ -102,6 +117,7 @@ class GameManager {
                 rollResult.classList.add('hidden');
             }
             this.scene.clearHighlights();
+            this.selectedPiece = null;
         }
     }
 
@@ -158,7 +174,7 @@ class GameManager {
     initScene() {
         if (!this.scene) {
             const container = document.getElementById('game-container');
-            this.scene = new SceneManager(container, this.handlePieceClick.bind(this));
+            this.scene = new SceneManager(container, this.handleInteract.bind(this));
         }
     }
 
@@ -299,12 +315,12 @@ class GameManager {
         const impulses = [];
         for(let i=0; i<4; i++) {
             impulses.push({
-                fx: (Math.random() - 0.5) * 5,
-                fy: 15 + Math.random() * 5,
-                fz: (Math.random() - 0.5) * 5,
-                tx: Math.random() * 10,
-                ty: Math.random() * 10,
-                tz: Math.random() * 10
+                fx: (Math.random() - 0.5) * 4,
+                fy: -2 - Math.random() * 5,
+                fz: (Math.random() - 0.5) * 4,
+                tx: (Math.random() - 0.5) * 20,
+                ty: (Math.random() - 0.5) * 20,
+                tz: (Math.random() - 0.5) * 20
             });
         }
 
@@ -339,18 +355,36 @@ class GameManager {
         }, 200);
     }
 
-    handlePieceClick(pieceId) {
+    handleInteract(type, data) {
         if (this.gameState.turn !== this.localPlayerRole) return;
         if (this.gameState.roll === null) return;
         if (this.throwing) return;
 
-        // Check if piece belongs to player
-        if (!pieceId.startsWith(this.localPlayerRole)) return;
+        if (type === 'piece') {
+            const pieceId = data;
+            if (!pieceId.startsWith(this.localPlayerRole)) {
+                this.selectedPiece = null;
+                this.updateUI();
+                return;
+            }
 
-        // Find move
-        const move = this.gameState.validMoves.find(m => m.pieceId === pieceId);
-        if (move) {
-            this.executeMove(move);
+            const moves = this.gameState.validMoves.filter(m => m.pieceId === pieceId);
+            if (moves.length > 0) {
+                this.selectedPiece = pieceId;
+                this.scene.showValidMoves(moves, pieceId);
+                document.getElementById('action-hint').innerText = "Tap a highlighted destination to move.";
+            } else {
+                this.selectedPiece = null;
+                this.updateUI();
+            }
+        } else if (type === 'move') {
+            if (this.selectedPiece) {
+                this.executeMove(data);
+                this.selectedPiece = null;
+            }
+        } else if (type === 'none') {
+            this.selectedPiece = null;
+            this.updateUI();
         }
     }
 

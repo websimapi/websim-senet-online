@@ -5,9 +5,9 @@ import { getBoardCoordinates } from './senet_rules.js';
 import { audio } from './audio.js';
 
 export class SceneManager {
-    constructor(container, onPieceClick) {
+    constructor(container, onInteract) {
         this.container = container;
-        this.onPieceClick = onPieceClick;
+        this.onInteract = onInteract;
         this.piecesMeshes = {};
         this.sticks = [];
         this.stickBodies = [];
@@ -15,6 +15,7 @@ export class SceneManager {
         
         this.initThree();
         this.initCannon();
+        this.buildTable();
         this.buildBoard();
         this.buildPieces();
         this.buildSticks();
@@ -34,7 +35,7 @@ export class SceneManager {
         this.scene.background = new THREE.Color(0x1a1a1a);
 
         this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-        this.camera.position.set(0, 15, 18);
+        this.camera.position.set(5, 22, 22);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -43,7 +44,8 @@ export class SceneManager {
 
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
-        this.controls.maxPolarAngle = Math.PI / 2.1; // Don't go below board
+        this.controls.target.set(5, 0, 0);
+        this.controls.maxPolarAngle = Math.PI / 2.2; // Don't go below board
         this.controls.minDistance = 10;
         this.controls.maxDistance = 30;
 
@@ -62,32 +64,65 @@ export class SceneManager {
 
     initCannon() {
         this.world = new CANNON.World({
-            gravity: new CANNON.Vec3(0, -20, 0), // Stronger gravity for snappy throws
+            gravity: new CANNON.Vec3(0, -30, 0), // Strong gravity for snappy throws
         });
         
         // Materials
-        const boardMat = new CANNON.Material();
+        this.boardMat = new CANNON.Material();
         const stickMat = new CANNON.Material();
-        const contactMat = new CANNON.ContactMaterial(boardMat, stickMat, {
-            friction: 0.3,
-            restitution: 0.4
+        const contactMat = new CANNON.ContactMaterial(this.boardMat, stickMat, {
+            friction: 0.4,
+            restitution: 0.3
         });
         this.world.addContactMaterial(contactMat);
+    }
 
-        // Ground Plane Body
-        const groundShape = new CANNON.Plane();
-        this.groundBody = new CANNON.Body({ mass: 0, material: boardMat });
-        this.groundBody.addShape(groundShape);
-        this.groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-        this.world.addBody(this.groundBody);
-        
-        // Collision listener for sound
-        this.groundBody.addEventListener("collide", (e) => {
+    buildTable() {
+        // Large table
+        const tableGeo = new THREE.BoxGeometry(40, 2, 20);
+        const tableMat = new THREE.MeshStandardMaterial({ color: 0x2a1610, roughness: 0.9 });
+        const table = new THREE.Mesh(tableGeo, tableMat);
+        table.position.set(2, -1.5, 0); 
+        table.receiveShadow = true;
+        this.scene.add(table);
+
+        // Physics for table
+        const tableShape = new CANNON.Box(new CANNON.Vec3(20, 1, 10));
+        const tableBody = new CANNON.Body({ mass: 0, material: this.boardMat });
+        tableBody.addShape(tableShape);
+        tableBody.position.set(2, -1.5, 0);
+        this.world.addBody(tableBody);
+
+        tableBody.addEventListener("collide", (e) => {
             const relativeVelocity = e.contact.getImpactVelocityAlongNormal();
             if (Math.abs(relativeVelocity) > 2) {
                 audio.playClack(Math.min(1.0, Math.abs(relativeVelocity) / 10));
             }
         });
+
+        // Invisible walls for the throwing area on right side of the table
+        const wallShapeX = new CANNON.Box(new CANNON.Vec3(0.5, 5, 10));
+        const wallShapeZ = new CANNON.Box(new CANNON.Vec3(6, 5, 0.5));
+
+        const wallLeft = new CANNON.Body({ mass: 0, material: this.boardMat });
+        wallLeft.addShape(wallShapeX);
+        wallLeft.position.set(9, 2, 0);
+        this.world.addBody(wallLeft);
+
+        const wallRight = new CANNON.Body({ mass: 0, material: this.boardMat });
+        wallRight.addShape(wallShapeX);
+        wallRight.position.set(20, 2, 0);
+        this.world.addBody(wallRight);
+
+        const wallTop = new CANNON.Body({ mass: 0, material: this.boardMat });
+        wallTop.addShape(wallShapeZ);
+        wallTop.position.set(14.5, 2, -9);
+        this.world.addBody(wallTop);
+
+        const wallBottom = new CANNON.Body({ mass: 0, material: this.boardMat });
+        wallBottom.addShape(wallShapeZ);
+        wallBottom.position.set(14.5, 2, 9);
+        this.world.addBody(wallBottom);
     }
 
     buildBoard() {
@@ -95,7 +130,7 @@ export class SceneManager {
         const baseGeo = new THREE.BoxGeometry(21, 1, 7);
         const baseMat = new THREE.MeshStandardMaterial({ color: 0x5c4033 });
         const base = new THREE.Mesh(baseGeo, baseMat);
-        base.position.y = -0.5;
+        base.position.set(-3, -0.4, 0); // Center of the left-shifted board
         base.receiveShadow = true;
         this.scene.add(base);
 
@@ -189,27 +224,28 @@ export class SceneManager {
         }
     }
 
-    showValidMoves(moves) {
-        // Clear old
-        this.highlightBoxes.forEach(b => this.scene.remove(b));
-        this.highlightBoxes = [];
+    showValidMoves(moves, selectedPieceId) {
+        this.clearHighlights();
 
-        const geo = new THREE.BoxGeometry(1.8, 0.2, 1.8);
+        if (selectedPieceId && this.piecesMeshes[selectedPieceId]) {
+            this.piecesMeshes[selectedPieceId].material.emissive.setHex(0x555500); // Yellow highlight for selected
+        }
+
+        const geo = new THREE.BoxGeometry(1.8, 0.4, 1.8);
         const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 });
 
         moves.forEach(m => {
-            if (m.targetPos === -1) return; // Exit board move
-            const pos = getBoardCoordinates(m.targetPos);
             const box = new THREE.Mesh(geo, mat);
-            box.position.set(pos.x, 0.2, pos.z);
+            if (m.targetPos === -1) {
+                const pos = getBoardCoordinates(29);
+                box.position.set(pos.x + 3, 0.2, pos.z); // Put exit zone slightly right of final square
+            } else {
+                const pos = getBoardCoordinates(m.targetPos);
+                box.position.set(pos.x, 0.2, pos.z);
+            }
+            box.userData = { isMove: true, move: m };
             this.scene.add(box);
             this.highlightBoxes.push(box);
-
-            // Highlight the piece that can move
-            const pieceMesh = this.piecesMeshes[m.pieceId];
-            if (pieceMesh) {
-                 pieceMesh.material.emissive.setHex(0x333333);
-            }
         });
     }
 
@@ -222,38 +258,42 @@ export class SceneManager {
     }
 
     onPointerDown(event) {
-        // Normalize mouse coordinates
         this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
         this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
         this.raycaster.setFromCamera(this.mouse, this.camera);
         
-        // Intersect pieces
-        const intersects = this.raycaster.intersectObjects(Object.values(this.piecesMeshes));
+        const interactables = [...Object.values(this.piecesMeshes), ...this.highlightBoxes];
+        const intersects = this.raycaster.intersectObjects(interactables);
+        
         if (intersects.length > 0) {
-            const pieceId = intersects[0].object.userData.id;
-            this.onPieceClick(pieceId);
+            const object = intersects[0].object;
+            if (object.userData.isMove) {
+                this.onInteract('move', object.userData.move);
+            } else if (object.userData.id) {
+                this.onInteract('piece', object.userData.id);
+            }
+        } else {
+            this.onInteract('none', null);
         }
     }
 
     applyThrowImpulses(impulses) {
-        // Place sticks above board and apply forces
+        // Place sticks above throw area on the right and apply forces
         for (let i = 0; i < 4; i++) {
             const body = this.stickBodies[i];
             
-            // Reset position slightly spread out
-            body.position.set(-3 + i * 2, 8 + Math.random(), 0);
+            // Spawn inside the throw area
+            body.position.set(12 + (i % 2) * 3, 6 + Math.random() * 2, -2 + Math.floor(i / 2) * 4);
             body.velocity.set(0,0,0);
             body.angularVelocity.set(0,0,0);
             
-            // Randomize initial rotation slightly
             body.quaternion.setFromEuler(
                 Math.random() * Math.PI,
                 Math.random() * Math.PI,
                 Math.random() * Math.PI
             );
 
-            // Apply synced impulses
             body.applyImpulse(
                 new CANNON.Vec3(impulses[i].fx, impulses[i].fy, impulses[i].fz),
                 new CANNON.Vec3(0, 0, 0)

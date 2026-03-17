@@ -18,14 +18,13 @@ export function getBoardCoordinates(index) {
         col = 9 - col;
     }
     
-    // Scale for 3D world (assuming tile size is ~2 units)
     const TILE_SIZE = 2;
-    const OFFSET_X = -4.5 * TILE_SIZE; // Center grid
+    const OFFSET_X = -6 * TILE_SIZE; // Shift board left to make room for table throw area
     const OFFSET_Z = -1 * TILE_SIZE;
 
     return {
         x: OFFSET_X + col * TILE_SIZE,
-        y: 0.5, // Slightly above board
+        y: 0.1, // Sit nicely on the board
         z: OFFSET_Z + row * TILE_SIZE
     };
 }
@@ -46,29 +45,37 @@ export class SenetLogic {
         return null;
     }
 
-    // Standard simplified Senet rules
-    // 1=1, 2=2, 3=3, 4=4, 0=5
-    // 1, 4, 5 grant an extra turn
     getValidMoves(player, roll) {
         if (!roll) return [];
         
         const distance = roll === 0 ? 5 : roll;
         const validMoves = [];
+        const opponent = player === 'p1' ? 'p2' : 'p1';
 
         for (let i = 0; i < 5; i++) {
             const pieceId = `${player}_${i}`;
             const currentPos = this.pieces[pieceId];
             
-            // If already finished
             if (currentPos === -1) continue;
 
             let targetPos = currentPos + distance;
 
-            // Exit board rule
+            // Blockade rule: Cannot pass 3 or more opponent pieces in a row
+            let isBlocked = false;
+            for (let p = currentPos + 1; p < targetPos; p++) {
+                if (p > 29) break;
+                if (this.isBlockade(p, opponent)) {
+                    isBlocked = true;
+                    break;
+                }
+            }
+            if (isBlocked) continue;
+
             if (targetPos >= BOARD_SIZE) {
-                // Must land exactly on 30 to exit, or allow overshooting for simplicity
-                // Let's allow exiting if >= 30 to make games faster
-                validMoves.push({ pieceId, targetPos: -1, type: 'exit' });
+                // Exact roll required to exit
+                if (targetPos === BOARD_SIZE) {
+                    validMoves.push({ pieceId, targetPos: -1, type: 'exit' });
+                }
                 continue;
             }
 
@@ -77,12 +84,9 @@ export class SenetLogic {
             if (occupantId) {
                 const occupantPlayer = occupantId.split('_')[0];
                 if (occupantPlayer === player) {
-                    // Blocked by own piece
-                    continue;
+                    continue; // Blocked by own piece
                 } else {
-                    // Check defense rule: Two opponent pieces adjacent?
-                    const isDefended = this.isDefended(targetPos, occupantPlayer);
-                    if (isDefended) {
+                    if (this.isDefended(targetPos, occupantPlayer)) {
                         continue; // Cannot capture defended piece
                     } else {
                         validMoves.push({ pieceId, targetPos, type: 'capture', captureId: occupantId });
@@ -95,35 +99,42 @@ export class SenetLogic {
         return validMoves;
     }
 
+    isBlockade(index, player) {
+        const check = (i) => {
+            if (i < 0 || i >= BOARD_SIZE) return false;
+            const id = this.getPieceAt(i);
+            return id && id.split('_')[0] === player;
+        };
+        if (check(index)) {
+            if (check(index-1) && check(index-2)) return true;
+            if (check(index-1) && check(index+1)) return true;
+            if (check(index+1) && check(index+2)) return true;
+        }
+        return false;
+    }
+
     isDefended(index, player) {
-        // Check adjacent tiles on the path (index-1 and index+1)
         const prevId = index > 0 ? this.getPieceAt(index - 1) : null;
         const nextId = index < BOARD_SIZE - 1 ? this.getPieceAt(index + 1) : null;
 
-        let adjacentCount = 0;
-        if (prevId && prevId.split('_')[0] === player) adjacentCount++;
-        if (nextId && nextId.split('_')[0] === player) adjacentCount++;
-
-        return adjacentCount > 0;
+        if (prevId && prevId.split('_')[0] === player) return true;
+        if (nextId && nextId.split('_')[0] === player) return true;
+        return false;
     }
 
     applyMove(move) {
         const newPieces = { ...this.pieces };
         
-        // Special Tiles
         let finalPos = move.targetPos;
         if (finalPos === 26) { // House of Water
-            finalPos = 14;     // Fall back to 15th square (index 14)
-            // If 14 is occupied, find nearest empty backwards? 
-            // Simplified: just swap with whoever is there or fail. Let's force move to 14.
+            finalPos = 14;     // Fall back to 15th square
             const occupant = this.getPieceAt(14);
             if (occupant) {
-                 newPieces[occupant] = 26; // Swap them into the water!
+                 newPieces[occupant] = 26; // Swap them into the water
             }
         }
 
         if (move.type === 'capture' && finalPos === move.targetPos) {
-            // Swap positions
             newPieces[move.captureId] = this.pieces[move.pieceId];
         }
 
