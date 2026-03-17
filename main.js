@@ -338,6 +338,10 @@ class GameManager {
                 clearInterval(checkInterval);
                 this.throwing = false;
                 
+                if (this.scene) {
+                    this.scene.focusOnBoard();
+                }
+
                 // Only the active player decides the authoritative result
                 if (this.gameState.turn === this.localPlayerRole || (this.mode === 'ai' && this.gameState.turn === 'p2')) {
                     const rollValue = this.scene.calculateRollValue();

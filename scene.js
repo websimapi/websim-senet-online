@@ -400,7 +400,7 @@ export class SceneManager {
                 this.focusCameraOn(object.position);
                 this.onInteract('piece', object.userData.id);
             } else if (object.userData.isBoard) {
-                this.focusCameraOn(new THREE.Vector3(-3, 0, 0));
+                this.focusOnBoard();
                 this.onInteract('none', null);
             }
         } else {
@@ -410,6 +410,10 @@ export class SceneManager {
 
     focusOnSticks() {
         this.focusCameraOn(new THREE.Vector3(14.5, 0, 0));
+    }
+
+    focusOnBoard() {
+        this.focusCameraOn(new THREE.Vector3(-3, 0, 0));
     }
 
     focusCameraOn(position) {
