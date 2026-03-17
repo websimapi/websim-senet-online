@@ -366,27 +366,25 @@ export class SceneManager {
     }
 
     applyThrowImpulses(impulses) {
-        this.isThrowing = true;
-        this.throwTime = 0;
+        this.isShaking = true;
+        this.shakeTime = 0;
         this.pendingImpulses = impulses;
-        this.stickStartStates = [];
 
-        // Make sticks kinematic for the lift animation
+        // Random direction for the hand to tilt when tossing
+        this.handTiltX = (Math.random() - 0.5) * Math.PI;
+        this.handTiltZ = (Math.random() - 0.5) * Math.PI;
+
+        // Make sticks kinematic for the shake animation
         for (let i = 0; i < 4; i++) {
             const body = this.stickBodies[i];
             body.type = CANNON.Body.KINEMATIC;
             body.velocity.set(0, 0, 0);
             body.angularVelocity.set(0, 0, 0);
-            
-            this.stickStartStates.push({
-                pos: body.position.clone(),
-                quat: body.quaternion.clone()
-            });
         }
     }
 
     checkSticksSettled() {
-        if (this.isThrowing) return false;
+        if (this.isShaking) return false;
         let settled = true;
         for (const body of this.stickBodies) {
             if (body.velocity.lengthSquared() > 0.05 || body.angularVelocity.lengthSquared() > 0.05) {
@@ -430,48 +428,51 @@ export class SceneManager {
         // Step Physics
         this.world.step(1 / 60);
 
-        if (this.isThrowing) {
-            this.throwTime += 1 / 60;
-            const duration = 0.8; // 0.8 seconds to scoop and lift
-            const t = Math.min(this.throwTime / duration, 1.0);
-            
-            // Easing functions
-            const easeOut = 1 - Math.pow(1 - t, 3);
-            const easeIn = t * t * t;
+        if (this.isShaking) {
+            this.shakeTime += 1 / 60;
+            const liftProgress = Math.min(this.shakeTime / 0.2, 1.0);
+            const dropProgress = Math.max(0, (this.shakeTime - 0.4) / 0.2);
             
             for (let i = 0; i < 4; i++) {
                 const body = this.stickBodies[i];
-                const start = this.stickStartStates[i];
                 
-                // Scoop motion: pull sticks together, lift high
-                const centerX = 14.5 + 0.9; // Approximate center of the sticks setup
-                const centerZ = 0;
+                // Cupped hand targets (tighter spacing, lower height)
+                const targetX = 14.5 + (i % 2) * 0.8 - 0.4;
+                const targetY = 1.8;
+                const targetZ = (i < 2 ? -0.4 : 0.4);
                 
-                // Clump together as they are picked up
-                const clumpX = start.pos.x + (centerX - start.pos.x) * (easeOut * 0.7);
-                const clumpZ = start.pos.z + (centerZ - start.pos.z) * (easeOut * 0.7);
+                const shakeIntensity = liftProgress * (1 - dropProgress) * 0.3;
+                const shakeX = (Math.random() - 0.5) * shakeIntensity;
+                const shakeY = (Math.random() - 0.5) * shakeIntensity;
+                const shakeZ = (Math.random() - 0.5) * shakeIntensity;
                 
-                // Swoop up and slightly back
-                const swoopX = Math.sin(t * Math.PI) * -2.0; 
-                const swoopY = easeOut * 12; // Lift much higher (12 units)
-                
-                body.position.set(
-                    clumpX + swoopX,
-                    start.pos.y + swoopY,
-                    clumpZ
+                // Tilt offset to simulate pouring out of the hand
+                const pourOffsetX = Math.sin(this.handTiltZ) * dropProgress * 1.5;
+                const pourOffsetZ = -Math.sin(this.handTiltX) * dropProgress * 1.5;
+                const pourOffsetY = -dropProgress * 0.5;
+
+                const targetPos = new CANNON.Vec3(
+                    targetX + shakeX + pourOffsetX, 
+                    targetY + shakeY + pourOffsetY, 
+                    targetZ + shakeZ + pourOffsetZ
                 );
+                body.position.lerp(targetPos, 0.4, body.position);
                 
-                // Gentle tilt to cradle, then pitch forward to toss
-                const cradlingTilt = Math.sin(t * Math.PI) * (Math.PI / 8); 
-                const tossTilt = easeIn * (Math.PI / 3); 
-                
-                const qTilt = new CANNON.Quaternion();
-                qTilt.setFromEuler(tossTilt, 0, cradlingTilt);
-                start.quat.mult(qTilt, body.quaternion);
+                // Rotation: base jitter + tilt drop
+                const baseJitterX = (Math.random() - 0.5) * shakeIntensity * 2;
+                const baseJitterY = (Math.random() - 0.5) * shakeIntensity * 2;
+                const baseJitterZ = (Math.random() - 0.5) * shakeIntensity * 2;
+
+                const currentTiltX = baseJitterX + (this.handTiltX * dropProgress);
+                const currentTiltZ = baseJitterZ + (this.handTiltZ * dropProgress);
+
+                const targetQuat = new CANNON.Quaternion();
+                targetQuat.setFromEuler(currentTiltX, baseJitterY, currentTiltZ);
+                body.quaternion.slerp(targetQuat, 0.4, body.quaternion);
             }
             
-            if (this.throwTime > duration) {
-                this.isThrowing = false;
+            if (this.shakeTime > 0.6) {
+                this.isShaking = false;
                 for (let i = 0; i < 4; i++) {
                     const body = this.stickBodies[i];
                     body.type = CANNON.Body.DYNAMIC;

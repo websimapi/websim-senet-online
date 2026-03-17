@@ -305,16 +305,16 @@ class GameManager {
     initiateThrow() {
         if (this.gameState.turn !== this.localPlayerRole) return;
 
-        // Generate impulses for realistic toss
+        // Generate impulses
         const impulses = [];
         for(let i=0; i<4; i++) {
             impulses.push({
-                fx: (Math.random() - 0.5) * 2,     // Slight lateral scatter
-                fy: -10 - Math.random() * 10,      // Toss downward firmly
-                fz: (Math.random() - 0.5) * 2,     // Slight forward/back scatter
-                tx: (Math.random() - 0.5) * 6,     // Gentle spin
-                ty: (Math.random() - 0.5) * 6,     
-                tz: (Math.random() - 0.5) * 6      
+                fx: (Math.random() - 0.5) * 4,
+                fy: -2 - Math.random() * 5,
+                fz: (Math.random() - 0.5) * 4,
+                tx: (Math.random() - 0.5) * 20,
+                ty: (Math.random() - 0.5) * 20,
+                tz: (Math.random() - 0.5) * 20
             });
         }
 
