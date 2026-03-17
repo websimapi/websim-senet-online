@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Senet Online</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Import Maps for external libraries -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://esm.sh/three@0.160.0",
+            "three/addons/": "https://esm.sh/three@0.160.0/examples/jsm/",
+            "cannon-es": "https://esm.sh/cannon-es@0.20.0"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="game-container">
+        <!-- 3D Canvas will be injected here -->
+    </div>
+
+    <div id="ui-layer">
+        <!-- Screens -->
+        <div id="screen-title" class="screen active">
+            <h1>SENET</h1>
+            <p class="subtitle">The Ancient Game of Passing</p>
+            <div class="menu-buttons">
+                <button id="btn-play-online">Play Online</button>
+                <button id="btn-play-ai">Play vs Computer</button>
+            </div>
+        </div>
+
+        <div id="screen-lobby" class="screen">
+            <h2>Lobby</h2>
+            <div id="lobby-status">Waiting for connection...</div>
+            <div id="players-list"></div>
+            <button id="btn-join-game" style="display: none;">Join Game as Player 2</button>
+            <button id="btn-leave-lobby">Back</button>
+        </div>
+
+        <div id="screen-game" class="screen">
+            <div class="hud-top">
+                <div class="player-info" id="p1-info">
+                    <span class="avatar">👤</span> P1 (Black)
+                </div>
+                <div class="turn-indicator" id="turn-display">Waiting...</div>
+                <div class="player-info" id="p2-info">
+                    P2 (White) <span class="avatar">👤</span>
+                </div>
+            </div>
+
+            <div class="hud-bottom">
+                <div id="roll-result" class="hidden">Rolled: <span id="roll-number">0</span></div>
+                <button id="btn-roll" disabled>Throw Sticks</button>
+                <div id="action-hint">Waiting for turn...</div>
+            </div>
+        </div>
+
+        <div id="screen-gameover" class="screen">
+            <h2 id="winner-text">Player Wins!</h2>
+            <button id="btn-return-title">Return to Menu</button>
+        </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
