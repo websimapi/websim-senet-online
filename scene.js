@@ -237,14 +237,17 @@ export class SceneManager {
             const body = new CANNON.Body({
                 mass: 1,
                 shape: shape,
-                position: new CANNON.Vec3(0, -5, 0) // Hide initially
+                position: new CANNON.Vec3(13.5 + i * 0.6, -0.42, 0) // Place neatly
             });
+            // Rotate to show black side up (Three.js top face +Y rotated 180 on Z)
+            body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), Math.PI);
             this.world.addBody(body);
             this.stickBodies.push(body);
 
             // Visual mesh
             const mesh = new THREE.Mesh(geo, materials);
             mesh.castShadow = true;
+            mesh.userData = { isStick: true };
             this.scene.add(mesh);
             this.sticks.push(mesh);
         }
@@ -331,13 +334,16 @@ export class SceneManager {
 
         this.raycaster.setFromCamera(this.mouse, this.camera);
         
-        const interactables = [...Object.values(this.piecesMeshes), ...this.highlightBoxes, ...this.boardMeshes];
+        const interactables = [...Object.values(this.piecesMeshes), ...this.highlightBoxes, ...this.boardMeshes, ...this.sticks];
         const intersects = this.raycaster.intersectObjects(interactables);
         
         if (intersects.length > 0) {
             const object = intersects[0].object;
             if (object.userData.isMove) {
                 this.onInteract('move', object.userData.move);
+            } else if (object.userData.isStick) {
+                this.focusOnSticks();
+                this.onInteract('sticks', null);
             } else if (object.userData.id) {
                 this.focusCameraOn(object.position);
                 this.onInteract('piece', object.userData.id);
@@ -350,37 +356,31 @@ export class SceneManager {
         }
     }
 
+    focusOnSticks() {
+        this.focusCameraOn(new THREE.Vector3(14.5, 0, 0));
+    }
+
     focusCameraOn(position) {
         this.targetLerpPos.copy(position);
         this.isLerpingTarget = true;
     }
 
     applyThrowImpulses(impulses) {
-        // Place sticks above throw area on the right and apply forces
+        this.isShaking = true;
+        this.shakeTime = 0;
+        this.pendingImpulses = impulses;
+
+        // Make sticks kinematic for the shake animation
         for (let i = 0; i < 4; i++) {
             const body = this.stickBodies[i];
-            
-            // Spawn inside the throw area
-            body.position.set(12 + (i % 2) * 3, 6 + Math.random() * 2, -2 + Math.floor(i / 2) * 4);
-            body.velocity.set(0,0,0);
-            body.angularVelocity.set(0,0,0);
-            
-            body.quaternion.setFromEuler(
-                Math.random() * Math.PI,
-                Math.random() * Math.PI,
-                Math.random() * Math.PI
-            );
-
-            body.applyImpulse(
-                new CANNON.Vec3(impulses[i].fx, impulses[i].fy, impulses[i].fz),
-                new CANNON.Vec3(0, 0, 0)
-            );
-            
-            body.angularVelocity.set(impulses[i].tx, impulses[i].ty, impulses[i].tz);
+            body.type = CANNON.Body.KINEMATIC;
+            body.velocity.set(0, 0, 0);
+            body.angularVelocity.set(0, 0, 0);
         }
     }
 
     checkSticksSettled() {
+        if (this.isShaking) return false;
         let settled = true;
         for (const body of this.stickBodies) {
             if (body.velocity.lengthSquared() > 0.05 || body.angularVelocity.lengthSquared() > 0.05) {
@@ -423,6 +423,47 @@ export class SceneManager {
         
         // Step Physics
         this.world.step(1 / 60);
+
+        if (this.isShaking) {
+            this.shakeTime += 1 / 60;
+            const liftProgress = Math.min(this.shakeTime / 0.2, 1.0);
+            
+            for (let i = 0; i < 4; i++) {
+                const body = this.stickBodies[i];
+                
+                // Hand picked up targets
+                const targetX = 14.5 + (i % 2) * 1.5 - 0.75;
+                const targetY = 3.5;
+                const targetZ = (i < 2 ? -1.5 : 1.5);
+                
+                const shakeIntensity = liftProgress * 0.8;
+                const shakeX = (Math.random() - 0.5) * shakeIntensity;
+                const shakeY = (Math.random() - 0.5) * shakeIntensity;
+                const shakeZ = (Math.random() - 0.5) * shakeIntensity;
+                
+                body.position.lerp(new CANNON.Vec3(targetX + shakeX, targetY + shakeY, targetZ + shakeZ), 0.3, body.position);
+                
+                body.quaternion.setFromEuler(
+                    Math.random() * Math.PI * shakeIntensity,
+                    Math.random() * Math.PI * shakeIntensity,
+                    Math.random() * Math.PI * shakeIntensity
+                );
+            }
+            
+            if (this.shakeTime > 0.6) {
+                this.isShaking = false;
+                for (let i = 0; i < 4; i++) {
+                    const body = this.stickBodies[i];
+                    body.type = CANNON.Body.DYNAMIC;
+                    
+                    body.applyImpulse(
+                        new CANNON.Vec3(this.pendingImpulses[i].fx, this.pendingImpulses[i].fy, this.pendingImpulses[i].fz),
+                        new CANNON.Vec3(0, 0, 0)
+                    );
+                    body.angularVelocity.set(this.pendingImpulses[i].tx, this.pendingImpulses[i].ty, this.pendingImpulses[i].tz);
+                }
+            }
+        }
 
         // Sync meshes
         for (let i = 0; i < 4; i++) {

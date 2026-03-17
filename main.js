@@ -40,7 +40,6 @@ class GameManager {
         document.getElementById('btn-play-ai').onclick = () => this.startAIMode();
         document.getElementById('btn-leave-lobby').onclick = () => this.showScreen('title');
         document.getElementById('btn-join-game').onclick = () => this.joinRoomAsP2();
-        document.getElementById('btn-roll').onclick = () => this.initiateThrow();
         document.getElementById('btn-return-title').onclick = () => this.resetToTitle();
     }
 
@@ -54,7 +53,6 @@ class GameManager {
 
         const isMyTurn = this.gameState.turn === this.localPlayerRole;
         const turnDisplay = document.getElementById('turn-display');
-        const rollBtn = document.getElementById('btn-roll');
         const actionHint = document.getElementById('action-hint');
         const rollResult = document.getElementById('roll-result');
 
@@ -66,20 +64,22 @@ class GameManager {
         document.getElementById('p2-info').innerText = `P2 (White) ${this.localPlayerRole==='p2'?'(You)':(this.mode==='ai'?'(CPU)':'')}`;
 
         if (this.throwing) {
-            rollBtn.disabled = true;
             actionHint.innerText = "Sticks are settling...";
             return;
         }
 
         if (isMyTurn) {
             if (this.gameState.roll === null) {
-                rollBtn.disabled = false;
-                actionHint.innerText = "Roll the sticks!";
+                actionHint.innerText = "Tap the sticks to roll!";
+                if (!this.pannedForRoll && this.scene) {
+                    this.scene.focusOnSticks();
+                    this.pannedForRoll = true;
+                }
                 rollResult.classList.add('hidden');
                 this.scene.clearHighlights();
                 this.selectedPiece = null;
             } else {
-                rollBtn.disabled = true;
+                this.pannedForRoll = false;
                 rollResult.classList.remove('hidden');
                 document.getElementById('roll-number').innerText = this.gameState.roll;
                 
@@ -102,7 +102,7 @@ class GameManager {
                 }
             }
         } else {
-            rollBtn.disabled = true;
+            this.pannedForRoll = false;
             actionHint.innerText = "Waiting for opponent...";
             if (this.gameState.roll !== null) {
                 rollResult.classList.remove('hidden');
@@ -351,8 +351,16 @@ class GameManager {
 
     handleInteract(type, data) {
         if (this.gameState.turn !== this.localPlayerRole) return;
-        if (this.gameState.roll === null) return;
         if (this.throwing) return;
+
+        if (type === 'sticks') {
+            if (this.gameState.roll === null) {
+                this.initiateThrow();
+            }
+            return;
+        }
+
+        if (this.gameState.roll === null) return;
 
         if (type === 'piece') {
             const pieceId = data;
