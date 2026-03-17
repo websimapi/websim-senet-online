@@ -127,10 +127,10 @@ export class SceneManager {
 
     buildBoard() {
         // Base Box
-        const baseGeo = new THREE.BoxGeometry(21, 1, 7);
+        const baseGeo = new THREE.BoxGeometry(21, 0.5, 7);
         const baseMat = new THREE.MeshStandardMaterial({ color: 0x5c4033 });
         const base = new THREE.Mesh(baseGeo, baseMat);
-        base.position.set(-3, -0.4, 0); // Center of the left-shifted board
+        base.position.set(-3, -0.25, 0); // Center of the left-shifted board
         base.receiveShadow = true;
         this.scene.add(base);
 
@@ -231,7 +231,7 @@ export class SceneManager {
             this.piecesMeshes[selectedPieceId].material.emissive.setHex(0x555500); // Yellow highlight for selected
         }
 
-        const geo = new THREE.BoxGeometry(1.8, 0.4, 1.8);
+        const geo = new THREE.BoxGeometry(1.8, 0.2, 1.8);
         const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 });
 
         moves.forEach(m => {
