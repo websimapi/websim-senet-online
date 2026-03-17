@@ -363,6 +363,16 @@ class GameManager {
         if (type === 'piece') {
             const pieceId = data;
             if (!pieceId.startsWith(this.localPlayerRole)) {
+                if (this.selectedPiece) {
+                    const captureMove = this.gameState.validMoves.find(
+                        m => m.pieceId === this.selectedPiece && m.type === 'capture' && m.captureId === pieceId
+                    );
+                    if (captureMove) {
+                        this.executeMove(captureMove);
+                        this.selectedPiece = null;
+                        return;
+                    }
+                }
                 this.selectedPiece = null;
                 this.updateUI();
                 return;
