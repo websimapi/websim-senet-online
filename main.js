@@ -108,15 +108,26 @@ class GameManager {
         } else {
             this.pannedForRoll = false;
             if (this.scene) this.scene.showRollIndicator(false);
-            actionHint.innerText = "Waiting for opponent...";
-            if (this.gameState.roll !== null) {
+            
+            const isAI = this.mode === 'ai' && this.gameState.turn === 'p2';
+            
+            if (this.gameState.roll === null) {
+                actionHint.innerText = isAI ? "CPU is rolling..." : "Waiting for opponent to roll...";
+                rollResult.classList.add('hidden');
+            } else {
                 rollResult.classList.remove('hidden');
                 document.getElementById('roll-number').innerText = this.gameState.roll;
-            } else {
-                rollResult.classList.add('hidden');
+                
+                if (this.gameState.validMoves.length === 0) {
+                     actionHint.innerText = isAI ? "CPU has no valid moves." : "Opponent has no valid moves.";
+                } else {
+                     actionHint.innerText = isAI ? "CPU is thinking..." : "Waiting for opponent's move...";
+                }
             }
-            this.scene.clearHighlights();
-            this.selectedPiece = null;
+            
+            if (!this.selectedPiece) {
+                this.scene.clearHighlights();
+            }
         }
     }
 
@@ -277,6 +288,8 @@ class GameManager {
         // Calculate valid moves locally if it's my turn and a roll exists
         if (this.gameState.turn === this.localPlayerRole && this.gameState.roll !== null && !this.throwing) {
             this.gameState.validMoves = this.logic.getValidMoves(this.localPlayerRole, this.gameState.roll);
+        } else {
+            this.gameState.validMoves = [];
         }
 
         this.updateUI();
@@ -294,13 +307,15 @@ class GameManager {
             // Recalculate local moves
             if (this.gameState.roll !== null) {
                 this.gameState.validMoves = this.logic.getValidMoves(this.gameState.turn, this.gameState.roll);
+            } else {
+                this.gameState.validMoves = [];
             }
 
             this.updateUI();
 
             // Trigger AI if needed
-            if (this.gameState.turn === 'p2' && !this.throwing && updates.turn === 'p2') {
-                setTimeout(() => this.doAITurn(), 1000);
+            if (this.gameState.turn === 'p2' && !this.throwing && (updates.turn === 'p2' || updates.roll !== undefined)) {
+                setTimeout(() => this.doAITurn(), 500);
             }
         }
     }
@@ -308,7 +323,7 @@ class GameManager {
     // --- GAMEPLAY ACTIONS ---
 
     initiateThrow() {
-        if (this.gameState.turn !== this.localPlayerRole) return;
+        if (this.gameState.turn !== this.localPlayerRole && !(this.mode === 'ai' && this.gameState.turn === 'p2')) return;
 
         // Generate impulses for realistic toss
         const impulses = [];
@@ -448,12 +463,15 @@ class GameManager {
         if (this.gameState.status !== 'playing') return;
 
         if (this.gameState.roll === null) {
-            this.initiateThrow(); // AI throws
+            if (this.scene) this.scene.focusOnSticks();
+            setTimeout(() => {
+                if (this.gameState.turn === 'p2' && this.gameState.roll === null) {
+                    this.initiateThrow();
+                }
+            }, 1000);
         } else {
-            // AI picks a move
             const moves = this.gameState.validMoves;
             if (moves.length > 0) {
-                // Simple AI: Prefer captures, then exits, then furthest advancement
                 moves.sort((a, b) => {
                     if (a.type === 'capture' && b.type !== 'capture') return -1;
                     if (b.type === 'capture' && a.type !== 'capture') return 1;
@@ -462,9 +480,31 @@ class GameManager {
                     return b.targetPos - a.targetPos;
                 });
                 
-                setTimeout(() => this.executeMove(moves[0]), 1500);
+                const chosenMove = moves[0];
+                
+                setTimeout(() => {
+                    if (this.gameState.turn !== 'p2') return;
+                    if (this.scene) {
+                        this.scene.focusOnBoard();
+                        this.selectedPiece = chosenMove.pieceId; // Prevent updateUI from clearing highlights
+                        const movesForPiece = moves.filter(m => m.pieceId === chosenMove.pieceId);
+                        this.scene.showValidMoves(movesForPiece, chosenMove.pieceId);
+                        this.updateUI();
+                    }
+                    
+                    setTimeout(() => {
+                        if (this.gameState.turn !== 'p2') return;
+                        this.selectedPiece = null;
+                        if (this.scene) this.scene.clearHighlights();
+                        this.executeMove(chosenMove);
+                    }, 1500);
+                }, 1000);
             } else {
-                setTimeout(() => this.passTurn(), 1500);
+                setTimeout(() => {
+                    if (this.gameState.turn === 'p2') {
+                        this.passTurn();
+                    }
+                }, 2000);
             }
         }
     }
